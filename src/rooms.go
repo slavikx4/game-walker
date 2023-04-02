@@ -1,11 +1,14 @@
 package src
 
+import "sync"
+
 type Room struct {
 	KitchenRoom
 	BedRoom
 	LineRoom
 	HomeRoom
 	StreetRoom
+	Mu sync.Mutex
 }
 
 func NewRoom() Room {
@@ -14,26 +17,30 @@ func NewRoom() Room {
 			Name:     "кухня",
 			Entrance: []string{"коридор"},
 			Table:    []string{"чай"},
-			NeedToDo: []string{"собрать рюкзак", "идти в универ"},
+			InRoom:   []*Player{},
 		},
 		BedRoom: BedRoom{
 			Name:     "комната",
 			Entrance: []string{"коридор"},
 			Table:    []string{"ключи", "конспекты"},
 			Chain:    []string{"рюкзак"},
+			InRoom:   []*Player{},
 		},
 		LineRoom: LineRoom{
 			Name:     "коридор",
 			Entrance: []string{"кухня", "комната", "улица"},
+			InRoom:   []*Player{},
 		},
 		HomeRoom: HomeRoom{
 			Name:     "домой",
 			Entrance: []string{},
+			InRoom:   []*Player{},
 		},
 		StreetRoom: StreetRoom{
 			Name:     "улица",
 			Entrance: []string{"домой", "коридор"},
 			Door:     false,
+			InRoom:   []*Player{},
 		},
 	}
 }
@@ -42,7 +49,7 @@ type KitchenRoom struct {
 	Name     string
 	Entrance []string
 	Table    []string
-	NeedToDo []string
+	InRoom   []*Player
 }
 
 type BedRoom struct {
@@ -50,18 +57,22 @@ type BedRoom struct {
 	Entrance []string
 	Table    []string
 	Chain    []string
+	InRoom   []*Player
 }
 type LineRoom struct {
 	Name     string
 	Entrance []string
+	InRoom   []*Player
 }
 type HomeRoom struct {
 	Name     string
 	Entrance []string
+	InRoom   []*Player
 }
 
 type StreetRoom struct {
 	Name     string
 	Entrance []string
 	Door     bool
+	InRoom   []*Player
 }
