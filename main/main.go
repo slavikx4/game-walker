@@ -5,34 +5,41 @@ import (
 	"strings"
 )
 
-var players []src.Player
-var index = -1
+var players []*src.Player
+var rooms src.Room
 
 func initGame() {
-	player := src.Player{
-		Room:        src.NewRoom(),
-		CurrentRoom: "кухня",
-		Inventory:   []string{},
-		Do: map[string]func([]string, *src.Player) string{
-			"осмотреться": src.Look,
-			"идти":        src.Walk,
-			"одеть":       src.Dress,
-			"взять":       src.Take,
-			"применить":   src.Apply,
-		},
-	}
-	index++
-	players = append(players, player)
+	rooms = src.NewRoom()
 }
 
-func handleCommand(command string) string {
+func addPlayer(newPlayer *src.Player) {
+	rooms.Mu.Lock()
+	players = append(players, newPlayer)
+	rooms.Mu.Unlock()
+	go func(p *src.Player) {
+		var command string
+		for {
+			select {
+			case command = <-p.ChannelInput:
+				answer := handleCommand(command, newPlayer)
+				if answer != "" {
+					p.HandleOutput(answer)
+				}
+			}
+		}
+	}(newPlayer)
+	rooms.Mu.Lock()
+	rooms.KitchenRoom.InRoom = append(rooms.KitchenRoom.InRoom, newPlayer)
+	rooms.Mu.Unlock()
+}
+
+func handleCommand(command string, player *src.Player) string {
 	commands := strings.Fields(command)
-	player := &players[index]
 	f, ok := player.Do[commands[0]]
 	if !ok {
 		return "неизвестная команда"
 	}
-	answer := f(commands, player)
+	answer := f(commands, player, &rooms)
 	return answer
 }
 
