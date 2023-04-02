@@ -3,27 +3,62 @@ package src
 import "strings"
 
 type Player struct {
-	Room
-	CurrentRoom string
-	Inventory   []string
-	Do          map[string]func([]string, *Player) string
+	Name          string
+	CurrentRoom   string
+	Inventory     []string
+	NeedToDo      []string
+	ChannelOutput chan string
+	ChannelInput  chan string
+	Do            map[string]func([]string, *Player, *Room) string
 }
 
-func Look(commands []string, player *Player) string {
+func NewPlayer(name string) *Player {
+	player := Player{
+		Name:          name,
+		CurrentRoom:   "кухня",
+		Inventory:     []string{},
+		NeedToDo:      []string{"собрать рюкзак", "идти в универ"},
+		ChannelOutput: make(chan string),
+		ChannelInput:  make(chan string),
+		Do: map[string]func([]string, *Player, *Room) string{
+			"осмотреться":    Look,
+			"идти":           Walk,
+			"одеть":          Dress,
+			"взять":          Take,
+			"применить":      Apply,
+			"сказать":        Speak,
+			"сказать_игроку": SpeackTo,
+		},
+	}
+	return &player
+}
+func (p *Player) GetOutput() chan string {
+	return p.ChannelOutput
+}
+
+func (p *Player) HandleInput(command string) {
+	p.ChannelInput <- command
+}
+
+func (p *Player) HandleOutput(answer string) {
+	p.ChannelOutput <- answer
+}
+
+func Look(commands []string, player *Player, rooms *Room) string {
 	var answer string
 	switch player.CurrentRoom {
 	case "кухня":
 		answer += "ты находишься на кухне, "
-		if len(player.KitchenRoom.Table) > 0 {
+		if len(rooms.KitchenRoom.Table) > 0 {
 			answer += "на столе "
-			for _, el := range player.KitchenRoom.Table {
+			for _, el := range rooms.KitchenRoom.Table {
 				answer += el + ", "
 			}
 		}
-		if len(player.KitchenRoom.NeedToDo) > 0 {
+		if len(player.NeedToDo) > 0 {
 			answer += "надо "
-			for i, el := range player.KitchenRoom.NeedToDo {
-				if i != len(player.KitchenRoom.NeedToDo)-1 {
+			for i, el := range player.NeedToDo {
+				if i != len(player.NeedToDo)-1 {
 					answer += el + " и "
 				} else {
 					answer += el + ". "
@@ -31,28 +66,38 @@ func Look(commands []string, player *Player) string {
 			}
 		}
 		answer += "можно пройти - "
-		for i, el := range player.KitchenRoom.Entrance {
-			if i != len(player.KitchenRoom.Entrance)-1 {
+		for i, el := range rooms.KitchenRoom.Entrance {
+			if i != len(rooms.KitchenRoom.Entrance)-1 {
 				answer += el + ", "
 			} else {
 				answer += el
 			}
 		}
+		if len(rooms.KitchenRoom.InRoom) > 1 {
+			answer += ". Кроме вас тут ещё "
+			for _, el := range rooms.KitchenRoom.InRoom {
+				if el.Name == player.Name {
+					continue
+				}
+				answer += el.Name + ", "
+			}
+			answer = strings.TrimSuffix(answer, ", ")
+		}
 	case "комната":
-		if len(player.BedRoom.Table)+len(player.BedRoom.Chain) == 0 {
+		if len(rooms.BedRoom.Table)+len(rooms.BedRoom.Chain) == 0 {
 			answer += "пустая комната. "
 		} else {
 
-			if len(player.BedRoom.Table) > 0 {
+			if len(rooms.BedRoom.Table) > 0 {
 				answer += "на столе: "
-				for _, el := range player.BedRoom.Table {
+				for _, el := range rooms.BedRoom.Table {
 					answer += el + ", "
 				}
 			}
-			if len(player.BedRoom.Chain) > 0 {
+			if len(rooms.BedRoom.Chain) > 0 {
 				answer += "на стуле - "
-				for i, el := range player.BedRoom.Chain {
-					if i != len(player.BedRoom.Chain)-1 {
+				for i, el := range rooms.BedRoom.Chain {
+					if i != len(rooms.BedRoom.Chain)-1 {
 						answer += el + ", "
 					} else {
 						answer += el + ". "
@@ -64,8 +109,8 @@ func Look(commands []string, player *Player) string {
 			}
 		}
 		answer += "можно пройти - "
-		for i, el := range player.BedRoom.Entrance {
-			if i != len(player.BedRoom.Entrance)-1 {
+		for i, el := range rooms.BedRoom.Entrance {
+			if i != len(rooms.BedRoom.Entrance)-1 {
 				answer += el + ", "
 			} else {
 				answer += el
@@ -73,8 +118,8 @@ func Look(commands []string, player *Player) string {
 		}
 	case "коридор":
 		answer += "ничего интересного. "
-		for i, el := range player.LineRoom.Entrance {
-			if i != len(player.LineRoom.Entrance)-1 {
+		for i, el := range rooms.LineRoom.Entrance {
+			if i != len(rooms.LineRoom.Entrance)-1 {
 				answer += el + ", "
 			} else {
 				answer += el
@@ -82,8 +127,8 @@ func Look(commands []string, player *Player) string {
 		}
 	case "домой":
 		answer += "ничего интересного. "
-		for i, el := range player.HomeRoom.Entrance {
-			if i != len(player.HomeRoom.Entrance)-1 {
+		for i, el := range rooms.HomeRoom.Entrance {
+			if i != len(rooms.HomeRoom.Entrance)-1 {
 				answer += el + ", "
 			} else {
 				answer += el
@@ -91,8 +136,8 @@ func Look(commands []string, player *Player) string {
 		}
 	case "улица":
 		answer += "ничего интересного. "
-		for i, el := range player.StreetRoom.Entrance {
-			if i != len(player.StreetRoom.Entrance)-1 {
+		for i, el := range rooms.StreetRoom.Entrance {
+			if i != len(rooms.StreetRoom.Entrance)-1 {
 				answer += el + ", "
 			} else {
 				answer += el
@@ -101,16 +146,18 @@ func Look(commands []string, player *Player) string {
 	}
 	return answer
 }
-func Walk(commands []string, person *Player) string {
+func Walk(commands []string, player *Player, rooms *Room) string {
+	gone(player, rooms)
 	var answer string
 	switch commands[1] {
 	case "кухня":
-		if search(person.CurrentRoom, person.KitchenRoom.Entrance) {
-			person.CurrentRoom = "кухня"
+		if search(player.CurrentRoom, rooms.KitchenRoom.Entrance) {
+			rooms.KitchenRoom.InRoom = append(rooms.KitchenRoom.InRoom, player)
+			player.CurrentRoom = "кухня"
 			answer += "кухня, ничего интересного. "
 			answer += "можно пройти - "
-			for i, el := range person.KitchenRoom.Entrance {
-				if i != len(person.KitchenRoom.Entrance)-1 {
+			for i, el := range rooms.KitchenRoom.Entrance {
+				if i != len(rooms.KitchenRoom.Entrance)-1 {
 					answer += el + ", "
 				} else {
 					answer += el
@@ -120,12 +167,13 @@ func Walk(commands []string, person *Player) string {
 			answer = "нет пути в кухня"
 		}
 	case "комната":
-		if search(person.CurrentRoom, person.BedRoom.Entrance) {
-			person.CurrentRoom = "комната"
+		if search(player.CurrentRoom, rooms.BedRoom.Entrance) {
+			rooms.BedRoom.InRoom = append(rooms.BedRoom.InRoom, player)
+			player.CurrentRoom = "комната"
 			answer += "ты в своей комнате. "
 			answer += "можно пройти - "
-			for i, el := range person.BedRoom.Entrance {
-				if i != len(person.BedRoom.Entrance)-1 {
+			for i, el := range rooms.BedRoom.Entrance {
+				if i != len(rooms.BedRoom.Entrance)-1 {
 					answer += el + ", "
 				} else {
 					answer += el
@@ -135,12 +183,13 @@ func Walk(commands []string, person *Player) string {
 			answer = "нет пути в комната"
 		}
 	case "коридор":
-		if search(person.CurrentRoom, person.LineRoom.Entrance) {
-			person.CurrentRoom = "коридор"
+		if search(player.CurrentRoom, rooms.LineRoom.Entrance) {
+			rooms.LineRoom.InRoom = append(rooms.LineRoom.InRoom, player)
+			player.CurrentRoom = "коридор"
 			answer += "ничего интересного. "
 			answer += "можно пройти - "
-			for i, el := range person.LineRoom.Entrance {
-				if i != len(person.LineRoom.Entrance)-1 {
+			for i, el := range rooms.LineRoom.Entrance {
+				if i != len(rooms.LineRoom.Entrance)-1 {
 					answer += el + ", "
 				} else {
 					answer += el
@@ -150,12 +199,13 @@ func Walk(commands []string, person *Player) string {
 			answer = "нет пути в коридор"
 		}
 	case "домой":
-		if search(person.CurrentRoom, person.HomeRoom.Entrance) {
-			person.CurrentRoom = "домой"
+		if search(player.CurrentRoom, rooms.HomeRoom.Entrance) {
+			rooms.HomeRoom.InRoom = append(rooms.HomeRoom.InRoom, player)
+			player.CurrentRoom = "домой"
 			answer += "ничего интересного. "
 			answer += "можно пройти - "
-			for i, el := range person.HomeRoom.Entrance {
-				if i != len(person.HomeRoom.Entrance)-1 {
+			for i, el := range rooms.HomeRoom.Entrance {
+				if i != len(rooms.HomeRoom.Entrance)-1 {
 					answer += el + ", "
 				} else {
 					answer += el
@@ -165,9 +215,10 @@ func Walk(commands []string, person *Player) string {
 			answer = "нет пути в домой"
 		}
 	case "улица":
-		if person.StreetRoom.Door {
-			if search(person.CurrentRoom, person.StreetRoom.Entrance) {
-				person.CurrentRoom = "улица"
+		if rooms.StreetRoom.Door {
+			if search(player.CurrentRoom, rooms.StreetRoom.Entrance) {
+				rooms.StreetRoom.InRoom = append(rooms.StreetRoom.InRoom, player)
+				player.CurrentRoom = "улица"
 				answer += "на улице весна. "
 				answer += "можно пройти - домой"
 			} else {
@@ -179,13 +230,13 @@ func Walk(commands []string, person *Player) string {
 	}
 	return answer
 }
-func Dress(commands []string, person *Player) string {
+func Dress(commands []string, player *Player, rooms *Room) string {
 	var answer string
 	switch commands[1] {
 	case "рюкзак":
-		if search("рюкзак", person.BedRoom.Chain) {
-			person.Inventory = append(person.Inventory, "рюкзак")
-			removeItem("рюкзак", &person.BedRoom.Chain)
+		if search("рюкзак", rooms.BedRoom.Chain) {
+			player.Inventory = append(player.Inventory, "рюкзак")
+			removeItem("рюкзак", &rooms.BedRoom.Chain)
 			answer = "вы одели: рюкзак"
 		} else {
 			answer = "нет такого"
@@ -193,23 +244,23 @@ func Dress(commands []string, person *Player) string {
 	}
 	return answer
 }
-func Take(commands []string, person *Player) string {
+func Take(commands []string, player *Player, rooms *Room) string {
 	var answer string
-	if search("рюкзак", person.Inventory) {
+	if search("рюкзак", player.Inventory) {
 		switch commands[1] {
 		case "ключи":
-			if search("ключи", person.BedRoom.Table) {
-				person.Inventory = append(person.Inventory, "ключи")
-				removeItem("ключи", &person.BedRoom.Table)
+			if search("ключи", rooms.BedRoom.Table) {
+				player.Inventory = append(player.Inventory, "ключи")
+				removeItem("ключи", &rooms.BedRoom.Table)
 				answer = "предмет добавлен в инвентарь: ключи"
 			} else {
 				answer = "нет такого"
 			}
 		case "конспекты":
-			if search("конспекты", person.BedRoom.Table) {
-				person.Inventory = append(person.Inventory, "конспекты")
-				removeItem("конспекты", &person.BedRoom.Table)
-				removeItem("собрать рюкзак", &person.KitchenRoom.NeedToDo)
+			if search("конспекты", rooms.BedRoom.Table) {
+				player.Inventory = append(player.Inventory, "конспекты")
+				removeItem("конспекты", &rooms.BedRoom.Table)
+				removeItem("собрать рюкзак", &player.NeedToDo)
 				answer = "предмет добавлен в инвентарь: конспекты"
 			} else {
 				answer = "нет такого"
@@ -222,13 +273,13 @@ func Take(commands []string, person *Player) string {
 	}
 	return answer
 }
-func Apply(commands []string, person *Player) string {
+func Apply(commands []string, player *Player, rooms *Room) string {
 	var answer string
-	if search(commands[1], person.Inventory) {
+	if search(commands[1], player.Inventory) {
 		switch commands[2] {
 		case "дверь":
-			if person.CurrentRoom == "коридор" {
-				person.StreetRoom.Door = true
+			if player.CurrentRoom == "коридор" {
+				rooms.StreetRoom.Door = true
 				answer = "дверь открыта"
 			} else {
 				answer = "не к чему применить"
@@ -240,6 +291,94 @@ func Apply(commands []string, person *Player) string {
 		answer = "нет предмета в инвентаре - " + commands[1]
 	}
 	return answer
+}
+
+func Speak(commands []string, player *Player, rooms *Room) string {
+	var answer string
+	answer = player.Name + " говорит: "
+	for i, el := range commands {
+		if i == 0 {
+			continue
+		}
+		answer += el + " "
+	}
+	answer = strings.TrimSuffix(answer, " ")
+	switch player.CurrentRoom {
+	case "кухня":
+		for _, el := range rooms.KitchenRoom.InRoom {
+			if el.Name != player.Name {
+				el.HandleOutput(answer)
+			}
+		}
+	case "комната":
+		for _, el := range rooms.BedRoom.InRoom {
+			if el.Name != player.Name {
+				el.HandleOutput(answer)
+			}
+		}
+	case "коридор":
+		for _, el := range rooms.LineRoom.InRoom {
+			if el.Name != player.Name {
+				el.HandleOutput(answer)
+			}
+		}
+	case "домой":
+		for _, el := range rooms.HomeRoom.InRoom {
+			if el.Name != player.Name {
+				el.HandleOutput(answer)
+			}
+		}
+	case "улица":
+		for _, el := range rooms.StreetRoom.InRoom {
+			if el.Name != player.Name {
+				el.HandleOutput(answer)
+			}
+		}
+	}
+	return answer
+}
+
+func SpeackTo(commands []string, player *Player, rooms *Room) string {
+	var answer string
+	switch player.CurrentRoom {
+	case "кухня":
+		if searchPlayer(commands[1], rooms.KitchenRoom.InRoom) {
+			if len(commands) > 2 {
+				answer = player.Name + " говорит вам: "
+				for i, el := range commands {
+					if i != 0 && i != 1 {
+						answer += el + " "
+					}
+				}
+				answer = strings.TrimSuffix(answer, " ")
+				for _, el := range rooms.KitchenRoom.InRoom {
+					if commands[1] == el.Name {
+						el.HandleOutput(answer)
+					}
+				}
+			} else {
+				answer = player.Name + " выразительно молчит, смотря на вас"
+				for _, el := range rooms.KitchenRoom.InRoom {
+					if commands[1] == el.Name {
+						el.HandleOutput(answer)
+					}
+				}
+			}
+		} else {
+			answer = "тут нет такого игрока"
+			player.HandleOutput(answer)
+		}
+	}
+	return ""
+}
+
+func searchPlayer(name string, m []*Player) bool {
+	for _, el := range m {
+		if name == el.Name {
+			return true
+		}
+	}
+	return false
 }
 
 func search(item string, m []string) bool {
@@ -261,4 +400,59 @@ func removeItem(item string, slice *[]string) {
 		}
 	}
 	*slice = temp
+}
+
+func gone(player *Player, rooms *Room) {
+	switch player.CurrentRoom {
+	case "кухня":
+		for i, el := range rooms.KitchenRoom.InRoom {
+			if el.Name == player.Name {
+				if i != len(rooms.KitchenRoom.InRoom)-1 {
+					rooms.KitchenRoom.InRoom = append(rooms.KitchenRoom.InRoom[:i], rooms.KitchenRoom.InRoom[i+1:]...)
+				} else {
+					rooms.KitchenRoom.InRoom = rooms.KitchenRoom.InRoom[:len(rooms.KitchenRoom.InRoom)-1]
+				}
+			}
+		}
+	case "комната":
+		for i, el := range rooms.BedRoom.InRoom {
+			if el.Name == player.Name {
+				if i != len(rooms.BedRoom.InRoom)-1 {
+					rooms.BedRoom.InRoom = append(rooms.BedRoom.InRoom[:i], rooms.BedRoom.InRoom[i+1:]...)
+				} else {
+					rooms.BedRoom.InRoom = rooms.BedRoom.InRoom[:len(rooms.BedRoom.InRoom)-1]
+				}
+			}
+		}
+	case "коридор":
+		for i, el := range rooms.LineRoom.InRoom {
+			if el.Name == player.Name {
+				if i != len(rooms.LineRoom.InRoom)-1 {
+					rooms.LineRoom.InRoom = append(rooms.LineRoom.InRoom[:i], rooms.LineRoom.InRoom[i+1:]...)
+				} else {
+					rooms.LineRoom.InRoom = rooms.LineRoom.InRoom[:len(rooms.LineRoom.InRoom)-1]
+				}
+			}
+		}
+	case "домой":
+		for i, el := range rooms.HomeRoom.InRoom {
+			if el.Name == player.Name {
+				if i != len(rooms.HomeRoom.InRoom)-1 {
+					rooms.HomeRoom.InRoom = append(rooms.HomeRoom.InRoom[:i], rooms.HomeRoom.InRoom[i+1:]...)
+				} else {
+					rooms.HomeRoom.InRoom = rooms.HomeRoom.InRoom[:len(rooms.HomeRoom.InRoom)-1]
+				}
+			}
+		}
+	case "улица":
+		for i, el := range rooms.StreetRoom.InRoom {
+			if el.Name == player.Name {
+				if i != len(rooms.StreetRoom.InRoom)-1 {
+					rooms.StreetRoom.InRoom = append(rooms.StreetRoom.InRoom[:i], rooms.StreetRoom.InRoom[i+1:]...)
+				} else {
+					rooms.StreetRoom.InRoom = rooms.StreetRoom.InRoom[:len(rooms.StreetRoom.InRoom)-1]
+				}
+			}
+		}
+	}
 }
