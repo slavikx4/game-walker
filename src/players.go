@@ -1,9 +1,13 @@
 package src
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 type Player struct {
 	Name          string
+	ChatID        int64
 	CurrentRoom   string
 	Inventory     []string
 	NeedToDo      []string
@@ -12,9 +16,48 @@ type Player struct {
 	Do            map[string]func([]string, *Player, *Room) string
 }
 
-func NewPlayer(name string) *Player {
+var Players = make(map[string]*Player)
+
+func HandleCommand(command string, player *Player) string {
+	commands := strings.Fields(command)
+	f, ok := player.Do[commands[0]]
+	if !ok {
+		return "неизвестная команда"
+	}
+	answer := f(commands, player, &Rooms)
+	return answer
+}
+
+func AadPlayer(name string, chatID int64) *Player {
+	newPlayer := NewPlayer(name, chatID)
+	Rooms.Mu.Lock()
+	Players[name] = newPlayer
+	Rooms.Mu.Unlock()
+	go func(p *Player) {
+		var command string
+		for {
+			select {
+			case command = <-p.ChannelInput:
+				answer := HandleCommand(command, newPlayer)
+				if answer != "" {
+					p.HandleOutput(answer)
+				}
+			case <-time.After(20 * time.Minute):
+				p.dead()
+				return
+			}
+		}
+	}(newPlayer)
+	Rooms.Mu.Lock()
+	Rooms.KitchenRoom.InRoom = append(Rooms.KitchenRoom.InRoom, newPlayer)
+	Rooms.Mu.Unlock()
+	return newPlayer
+}
+
+func NewPlayer(name string, chatID int64) *Player {
 	player := Player{
 		Name:          name,
+		ChatID:        chatID,
 		CurrentRoom:   "кухня",
 		Inventory:     []string{},
 		NeedToDo:      []string{"собрать рюкзак", "идти в универ"},
@@ -32,6 +75,7 @@ func NewPlayer(name string) *Player {
 	}
 	return &player
 }
+
 func (p *Player) GetOutput() chan string {
 	return p.ChannelOutput
 }
@@ -117,7 +161,7 @@ func Look(commands []string, player *Player, rooms *Room) string {
 			}
 		}
 	case "коридор":
-		answer += "ничего интересного. "
+		answer += "ничего интересного. Можно пройти: "
 		for i, el := range rooms.LineRoom.Entrance {
 			if i != len(rooms.LineRoom.Entrance)-1 {
 				answer += el + ", "
@@ -126,7 +170,7 @@ func Look(commands []string, player *Player, rooms *Room) string {
 			}
 		}
 	case "домой":
-		answer += "ничего интересного. "
+		answer += "ничего интересного. Можно пройти: "
 		for i, el := range rooms.HomeRoom.Entrance {
 			if i != len(rooms.HomeRoom.Entrance)-1 {
 				answer += el + ", "
@@ -135,7 +179,7 @@ func Look(commands []string, player *Player, rooms *Room) string {
 			}
 		}
 	case "улица":
-		answer += "ничего интересного. "
+		answer += "ничего интересного. Можно пройти: "
 		for i, el := range rooms.StreetRoom.Entrance {
 			if i != len(rooms.StreetRoom.Entrance)-1 {
 				answer += el + ", "
@@ -220,13 +264,15 @@ func Walk(commands []string, player *Player, rooms *Room) string {
 				rooms.StreetRoom.InRoom = append(rooms.StreetRoom.InRoom, player)
 				player.CurrentRoom = "улица"
 				answer += "на улице весна. "
-				answer += "можно пройти - домой"
+				answer += "можно пройти - коридор"
 			} else {
 				answer = "нет пути в улица"
 			}
 		} else {
 			answer = "дверь закрыта"
 		}
+	default:
+		answer = "Нет существует такой комнаты!"
 	}
 	return answer
 }
@@ -241,6 +287,8 @@ func Dress(commands []string, player *Player, rooms *Room) string {
 		} else {
 			answer = "нет такого"
 		}
+	default:
+		answer = "Не существует такого предмета"
 	}
 	return answer
 }
@@ -292,7 +340,6 @@ func Apply(commands []string, player *Player, rooms *Room) string {
 	}
 	return answer
 }
-
 func Speak(commands []string, player *Player, rooms *Room) string {
 	var answer string
 	answer = player.Name + " говорит: "
@@ -337,39 +384,45 @@ func Speak(commands []string, player *Player, rooms *Room) string {
 	}
 	return answer
 }
-
 func SpeackTo(commands []string, player *Player, rooms *Room) string {
-	var answer string
+	var answer, message string
 	switch player.CurrentRoom {
 	case "кухня":
 		if searchPlayer(commands[1], rooms.KitchenRoom.InRoom) {
 			if len(commands) > 2 {
-				answer = player.Name + " говорит вам: "
+				message = player.Name + " говорит вам: "
 				for i, el := range commands {
 					if i != 0 && i != 1 {
-						answer += el + " "
+						message += el + " "
 					}
 				}
-				answer = strings.TrimSuffix(answer, " ")
+				message = strings.TrimSuffix(message, " ")
 				for _, el := range rooms.KitchenRoom.InRoom {
 					if commands[1] == el.Name {
-						el.HandleOutput(answer)
+						el.HandleOutput(message)
 					}
 				}
 			} else {
-				answer = player.Name + " выразительно молчит, смотря на вас"
+				message = player.Name + " выразительно молчит, смотря на вас"
 				for _, el := range rooms.KitchenRoom.InRoom {
 					if commands[1] == el.Name {
-						el.HandleOutput(answer)
+						el.HandleOutput(message)
 					}
 				}
 			}
+			answer = "сообщение отправлено😉"
 		} else {
 			answer = "тут нет такого игрока"
-			player.HandleOutput(answer)
 		}
 	}
-	return ""
+	return answer
+}
+
+func (player *Player) dead() {
+	answer := "💔персонаж бездействовал 20 минут и умер...💔"
+	player.HandleOutput(answer)
+	delete(Players, player.Name)
+
 }
 
 func searchPlayer(name string, m []*Player) bool {
