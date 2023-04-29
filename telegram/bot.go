@@ -73,7 +73,7 @@ func StartBot() {
 				log.Printf("отпавка сообщения игроку %v: %v \n", update.Message.From.UserName, answer.Text)
 				bot.Send(answer)
 			}
-
+			return
 		}(update)
 	}
 }
