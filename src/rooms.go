@@ -11,6 +11,14 @@ type Room struct {
 	Mu sync.Mutex
 }
 
+var Rooms Room
+
+func StartWorld() {
+	initGame()
+}
+func initGame() {
+	Rooms = NewRoom()
+}
 func NewRoom() Room {
 	return Room{
 		KitchenRoom: KitchenRoom{
@@ -33,7 +41,7 @@ func NewRoom() Room {
 		},
 		HomeRoom: HomeRoom{
 			Name:     "домой",
-			Entrance: []string{},
+			Entrance: []string{"коридор"},
 			InRoom:   []*Player{},
 		},
 		StreetRoom: StreetRoom{
